@@ -1,4 +1,4 @@
-package com.countrydelight.SQSLogAppender;
+package com.sampledemo.SQSLogAppender;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
