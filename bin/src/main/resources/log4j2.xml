@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="warn">
+    <Appenders>
+        <SQSAppender name="SQSAppender" queueUrl="https://sqs.ap-south-1.amazonaws.com/294169679111/message_log">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n"/>
+        </SQSAppender>
+    </Appenders>
+
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="SQSAppender"/>
+        </Root>
+    </Loggers>
+</Configuration>
