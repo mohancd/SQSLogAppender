@@ -24,6 +24,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Custom Log4j2 appender to send log messages to an AWS SQS queue.
+ */
 @Plugin(name = "SQSAppender", category = "Core", elementType = "appender", printObject = true)
 public class SQSAppender extends AbstractAppender {
 
@@ -31,6 +34,15 @@ public class SQSAppender extends AbstractAppender {
     private final String queueUrl;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Constructor for SQSAppender.
+     *
+     * @param name       Appender name
+     * @param filter     Filter for log events
+     * @param layout     Layout for log messages
+     * @param sqsClient  AWS SQS client instance
+     * @param queueUrl   SQS queue URL
+     */
     protected SQSAppender(String name, Filter filter, Layout<? extends Serializable> layout, SqsClient sqsClient, String queueUrl) {
         super(name, filter, layout, false);
         this.sqsClient = sqsClient;
@@ -40,43 +52,49 @@ public class SQSAppender extends AbstractAppender {
 
     @Override
     public void append(LogEvent event) {
-        String traceId = ThreadContext.get("trace_id");
-        String spanId = ThreadContext.get("span_id");
-
-        if (traceId == null || spanId == null) {
-            LOGGER.warn("Skipping log message as trace_id or span_id is not set in ThreadContext.");
+        if (!isThreadContextValid()) {
+            LOGGER.warn("Skipping log message: Missing required ThreadContext keys (trace_id, span_id).");
             return;
         }
 
         try {
-            // Create the log message in JSON format
             String logMessage = formatLogMessage(event);
-
-            // Send the log message to SQS
-            SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
-                    .queueUrl(queueUrl)
-                    .messageBody(logMessage)
-                    .build();
-
-            sqsClient.sendMessage(sendMsgRequest);
+            sendMessageToSQS(logMessage);
         } catch (Exception e) {
             LOGGER.error("Failed to send log message to SQS", e);
         }
     }
 
+    private boolean isThreadContextValid() {
+        return ThreadContext.containsKey("trace_id") && ThreadContext.containsKey("span_id");
+    }
+
+    private void sendMessageToSQS(String logMessage) {
+        SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+                .queueUrl(queueUrl)
+                .messageBody(logMessage)
+                .build();
+
+        sqsClient.sendMessage(sendMsgRequest);
+    }
+
     private String formatLogMessage(LogEvent event) throws JsonProcessingException {
         Map<String, Object> logDetails = new HashMap<>();
         logDetails.put("log_type", "service_request_log");
-        logDetails.put("trace_id", Optional.ofNullable(ThreadContext.get("trace_id")).orElse("N/A"));
-        logDetails.put("span_id", Optional.ofNullable(ThreadContext.get("span_id")).orElse("N/A"));
-        logDetails.put("url", Optional.ofNullable(ThreadContext.get("url")).orElse("N/A"));
-        logDetails.put("request_type", Optional.ofNullable(ThreadContext.get("request_type")).orElse("N/A"));
-        logDetails.put("request_data", Optional.ofNullable(ThreadContext.get("request_data")).orElse(null));
-        logDetails.put("response_data", Optional.ofNullable(ThreadContext.get("response_data")).orElse(null));
-        logDetails.put("service_name", Optional.ofNullable(ThreadContext.get("service_name")).orElse("N/A"));
+        logDetails.put("trace_id", getThreadContextValue("trace_id"));
+        logDetails.put("span_id", getThreadContextValue("span_id"));
+        logDetails.put("url", getThreadContextValue("url"));
+        logDetails.put("request_type", getThreadContextValue("request_type"));
+        logDetails.put("request_data", getThreadContextValue("request_data"));
+        logDetails.put("response_data", getThreadContextValue("response_data"));
+        logDetails.put("service_name", getThreadContextValue("service_name"));
         logDetails.put("created_date", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
         return objectMapper.writeValueAsString(logDetails);
+    }
+
+    private String getThreadContextValue(String key) {
+        return Optional.ofNullable(ThreadContext.get(key)).orElse("N/A");
     }
 
     @Override
@@ -87,6 +105,17 @@ public class SQSAppender extends AbstractAppender {
         }
     }
 
+    /**
+     * Plugin factory to create an SQSAppender instance.
+     *
+     * @param name               Appender name
+     * @param queueUrl           SQS queue URL
+     * @param filter             Log event filter
+     * @param layout             Log message layout
+     * @param region             AWS region
+     * @param credentialsProvider AWS credentials provider
+     * @return SQSAppender instance
+     */
     @PluginFactory
     public static SQSAppender createAppender(@PluginAttribute("name") String name,
                                              @PluginAttribute("queueUrl") String queueUrl,
@@ -99,7 +128,6 @@ public class SQSAppender extends AbstractAppender {
             layout = PatternLayout.createDefaultLayout();
         }
 
-        // Build the SQS client using the provided credentials and region
         SqsClient sqsClient = SqsClient.builder()
                 .credentialsProvider(credentialsProvider)
                 .region(region != null ? Region.of(region) : Region.AP_SOUTH_1)
