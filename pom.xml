@@ -63,6 +63,12 @@
 		</dependency>
 
 	</dependencies>
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/mohancd/SQSLogAppender</url>
+  </repository>
+</repositories>
 
 	<build>
 		<plugins>
